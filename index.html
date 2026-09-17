@@ -62,6 +62,70 @@
     </div>
   </header>
 
+  <!-- Animazione Gattino -->
+  <div aria-hidden="true" style="position: absolute; top: 71px; left: 0; width: 100%; height: 40px; pointer-events: none; overflow: hidden; z-index: 10;">
+    <div style="position: absolute; top: 5px; animation: walkAndTurn 24s linear infinite;">
+      <svg width="40" height="30" viewBox="0 0 40 30" xmlns="http://www.w3.org/2000/svg">
+        <path d="M 8 16 Q 2 16 4 8" stroke="#f97316" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+        <rect x="7" y="12" width="20" height="10" rx="4" fill="#f97316"/>
+        <circle cx="28" cy="12" r="5.5" fill="#f97316"/>
+        <polygon points="24,8 25,3 28,7" fill="#f97316"/>
+        <polygon points="28,7 31,3 32,8" fill="#f97316"/>
+        <circle cx="31" cy="11" r="1" fill="#fff"/>
+        <circle cx="33" cy="14" r="0.8" fill="#333"/>
+        
+        <g class="standing-legs">
+          <line x1="10" y1="21" x2="10" y2="26" stroke="#f97316" stroke-width="2.5" stroke-linecap="round"/>
+          <line x1="14" y1="21" x2="14" y2="26" stroke="#ea580c" stroke-width="2.5" stroke-linecap="round"/>
+          <line x1="22" y1="21" x2="22" y2="26" stroke="#f97316" stroke-width="2.5" stroke-linecap="round"/>
+          <line x1="26" y1="21" x2="26" y2="26" stroke="#ea580c" stroke-width="2.5" stroke-linecap="round"/>
+        </g>
+        
+        <g class="walking-legs">
+          <line x1="10" y1="21" x2="10" y2="26" stroke="#f97316" stroke-width="2.5" stroke-linecap="round" style="transform-origin: 10px 21px;" class="leg-swing-1"/>
+          <line x1="14" y1="21" x2="14" y2="26" stroke="#ea580c" stroke-width="2.5" stroke-linecap="round" style="transform-origin: 14px 21px;" class="leg-swing-2"/>
+          <line x1="22" y1="21" x2="22" y2="26" stroke="#f97316" stroke-width="2.5" stroke-linecap="round" style="transform-origin: 22px 21px;" class="leg-swing-2"/>
+          <line x1="26" y1="21" x2="26" y2="26" stroke="#ea580c" stroke-width="2.5" stroke-linecap="round" style="transform-origin: 26px 21px;" class="leg-swing-1"/>
+        </g>
+      </svg>
+    </div>
+  </div>
+  <style>
+    @keyframes walkAndTurn {
+      0% { left: 0px; transform: scaleX(1); }
+      40% { left: calc(100% - 40px); transform: scaleX(1); }
+      45% { left: calc(100% - 40px); transform: scaleX(1); }
+      46% { left: calc(100% - 40px); transform: scaleX(-1); }
+      50% { left: calc(100% - 40px); transform: scaleX(-1); }
+      90% { left: 0px; transform: scaleX(-1); }
+      95% { left: 0px; transform: scaleX(-1); }
+      96% { left: 0px; transform: scaleX(1); }
+      100% { left: 0px; transform: scaleX(1); }
+    }
+    .standing-legs { animation: toggleStanding 24s linear infinite; }
+    .walking-legs { animation: toggleWalking 24s linear infinite; }
+    
+    .leg-swing-1 { animation: swing 0.3s infinite alternate; }
+    .leg-swing-2 { animation: swing 0.3s infinite alternate-reverse; }
+    
+    @keyframes toggleWalking {
+      0%, 39.9% { opacity: 1; }
+      40%, 49.9% { opacity: 0; }
+      50%, 89.9% { opacity: 1; }
+      90%, 100% { opacity: 0; }
+    }
+    @keyframes toggleStanding {
+      0%, 39.9% { opacity: 0; }
+      40%, 49.9% { opacity: 1; }
+      50%, 89.9% { opacity: 0; }
+      90%, 100% { opacity: 1; }
+    }
+    @keyframes swing {
+      from { transform: rotate(-25deg); }
+      to { transform: rotate(25deg); }
+    }
+  </style>
+
   <!-- Contenuto Principale -->
   <main class="main-content" id="main-content">
     <div class="container">
