@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+
+# Modificare il dominio seguente dopo la pubblicazione
+Sitemap: https://[DOMINIO-DA-COMPILARE]/sitemap.xml
