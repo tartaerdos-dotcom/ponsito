@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Il re, il cuoco e le potenze &middot; Scena 8 di 13</title>
+<style>
+  :root{
+    --bg:#10131a; --bg2:#1a1f2b; --card:#ffffff; --ink:#1b2130; --muted:#5a6377;
+    --accent:#c8102e; --gold:#e8b62c; --ring:rgba(232,182,44,.55);
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; padding:24px 16px 32px;
+    font-family:'Segoe UI',system-ui,-apple-system,Roboto,Arial,sans-serif;
+    color:#eef1f7;
+    background:radial-gradient(1200px 700px at 50% -10%,#2a3350 0%,var(--bg2) 45%,var(--bg) 100%);
+    display:flex; flex-direction:column; align-items:center; gap:18px;
+  }
+  header{text-align:center; max-width:960px}
+  h1{margin:0 0 6px; font-size:clamp(20px,3.4vw,30px); letter-spacing:.3px}
+  .step{font-size:14px; color:#b9c2d6; letter-spacing:.6px; text-transform:uppercase}
+  .bar{width:min(960px,100%); height:6px; border-radius:999px; background:#2b3345; overflow:hidden; margin-top:10px}
+  .bar i{display:block; height:100%; width:62%; background:linear-gradient(90deg,var(--gold),var(--accent))}
+  .card{
+    flex:0 0 auto; width:min(960px,100%); background:var(--card); color:var(--ink);
+    border-radius:18px; overflow:hidden; box-shadow:0 18px 50px rgba(0,0,0,.45);
+  }
+  .imgwrap{position:relative; background:#f4f5f8; display:flex; justify-content:center; align-items:center}
+  .imgwrap img{display:block; width:100%; height:auto; max-height:58vh; object-fit:contain}
+  .cap{padding:20px 24px 22px; border-top:4px solid var(--gold)}
+  .cap h2{margin:0 0 8px; font-size:clamp(17px,2.4vw,22px); color:var(--accent)}
+  .cap p{margin:0; font-size:clamp(15px,2vw,18px); line-height:1.55; color:#25304a}
+  .audiobox{flex:0 0 auto; width:min(960px,100%); display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:center}
+  audio{width:min(520px,100%); height:40px}
+  .playnow{
+    display:none; align-items:center; gap:10px; cursor:pointer;
+    background:var(--gold); color:#2a2100; border:0; border-radius:999px;
+    padding:12px 22px; font-size:16px; font-weight:700; box-shadow:0 0 0 6px var(--ring);
+  }
+  .playnow.show{display:inline-flex}
+  nav{flex:0 0 auto; width:min(960px,100%); display:flex; gap:12px; justify-content:space-between; align-items:center}
+  a.btn,button.btn{
+    appearance:none; border:0; cursor:pointer; text-decoration:none;
+    background:#243049; color:#eef1f7; border:1px solid #3b4a6b;
+    padding:14px 22px; border-radius:12px; font-size:16px; font-weight:600;
+    display:inline-flex; align-items:center; gap:8px; min-width:140px; justify-content:center;
+  }
+  a.btn:hover,button.btn:hover{background:#2f3d5c}
+  a.btn.primary{background:var(--accent); border-color:#e0334c; color:#fff}
+  a.btn.primary:hover{background:#e0203f}
+  .btn.disabled{opacity:.35; pointer-events:none}
+  footer{color:#8d97ad; font-size:13px; text-align:center}
+  @media (max-width:640px){ a.btn,button.btn{min-width:0; flex:1; padding:14px 10px} }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Il re, il cuoco e le potenze</h1>
+  <div class="step">Scena 8 di 13</div>
+  <div class="bar"><i></i></div>
+</header>
+
+<main class="card">
+  <div class="imgwrap"><img src="media/scena08.jpg" alt="Il totale dei chicchi"></div>
+  <div class="cap">
+    <h2>Il totale dei chicchi</h2>
+    <p>Sommando tutte le caselle si arriva a più di 18 miliardi di miliardi di chicchi di riso: un numero che nessuno, nel regno, aveva mai nemmeno immaginato.</p>
+  </div>
+</main>
+
+<div class="audiobox">
+  <audio id="voce" controls preload="auto" src="media/scena08.wav"></audio>
+  <button class="playnow" id="playnow" type="button">&#9654; Ascolta il racconto</button>
+</div>
+
+<nav>
+  <a class="btn" href="potenze7.html">&larr; Indietro</a>
+  <button class="btn" id="replay" type="button">&#8635; Riascolta</button>
+  <a class="btn primary" href="potenze9.html">Avanti &rarr;</a>
+</nav>
+
+<footer>Usa le frecce &larr; e &rarr; della tastiera per spostarti tra le scene.</footer>
+
+<script>
+(function(){
+  var a = document.getElementById('voce');
+  var b = document.getElementById('playnow');
+  var p = a.play();
+  if (p && typeof p.catch === 'function') {
+    p.catch(function(){ b.classList.add('show'); });
+  }
+  b.addEventListener('click', function(){ a.currentTime = 0; a.play(); b.classList.remove('show'); });
+  document.getElementById('replay').addEventListener('click', function(){ a.currentTime = 0; a.play(); });
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'ArrowRight' && true) location.href = 'potenze9.html';
+    if (e.key === 'ArrowLeft'  && true) location.href = 'potenze7.html';
+    if (e.key === ' ') { e.preventDefault(); a.paused ? a.play() : a.pause(); }
+  });
+})();
+</script>
+</body>
+</html>
