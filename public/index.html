@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CXI | Sales Intelligence Agent</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- SheetJS per esportazione Excel -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <style>
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    </style>
+</head>
+<body class="bg-slate-50 font-sans text-slate-800 antialiased min-h-screen">
+
+    <!-- Schermata di Login -->
+    <div id="login-screen" class="fixed inset-0 bg-slate-900/80 flex items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-2xl shadow-xl max-w-md w-full p-8 border border-slate-100">
+            <div class="text-center mb-6">
+                <div class="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-indigo-50 text-indigo-600 text-2xl font-bold mb-3">🔎</div>
+                <h1 class="text-2xl font-bold text-slate-900">CXI · Sales Intelligence</h1>
+                <p class="text-sm text-slate-500 mt-1">Accesso alla versione beta web</p>
+            </div>
+            <form id="login-form" onsubmit="handleLogin(event)" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Username</label>
+                    <input type="text" id="username" required class="w-full px-4 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-slate-800">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Password</label>
+                    <input type="password" id="password" required class="w-full px-4 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-slate-800">
+                </div>
+                <div id="login-error" class="hidden text-sm text-red-600 bg-red-50 p-3 rounded-lg border border-red-100">Credenziali non valide</div>
+                <button type="submit" class="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg shadow-sm transition">Accedi</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Interfaccia Principale dell'App -->
+    <div id="app-screen" class="hidden flex h-screen overflow-hidden">
+        <!-- Sidebar -->
+        <aside class="w-72 bg-white border-r border-slate-200 flex flex-col justify-between p-5">
+            <div>
+                <div class="flex items-center space-x-3 mb-6">
+                    <span class="text-2xl">🔎</span>
+                    <div>
+                        <h2 class="font-bold text-slate-900">CXI Agent</h2>
+                        <span class="text-xs font-medium px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded-md">Versione Beta</span>
+                    </div>
+                </div>
+
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Modalità operative</label>
+                        <div class="space-y-2">
+                            <label class="flex items-center p-3 rounded-xl border border-slate-200 cursor-pointer hover:bg-slate-50 transition">
+                                <input type="radio" name="mode" value="demo" checked class="text-indigo-600 focus:ring-indigo-500">
+                                <div class="ml-3">
+                                    <span class="block text-sm font-medium text-slate-800">Demo (senza API)</span>
+                                    <span class="block text-xs text-slate-400">Dati fittizi di prova</span>
+                                </div>
+                            </label>
+                            <label class="flex items-center p-3 rounded-xl border border-slate-200 cursor-pointer hover:bg-slate-50 transition">
+                                <input type="radio" name="mode" value="gemini" class="text-indigo-600 focus:ring-indigo-500">
+                                <div class="ml-3">
+                                    <span class="block text-sm font-medium text-slate-800">Gemini (API)</span>
+                                    <span class="block text-xs text-slate-400">AI con ricerca B2B</span>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+                    <p class="text-xs text-slate-400 bg-slate-50 p-3 rounded-lg border border-slate-100">
+                        Le informazioni sui servizi CXI sono provvisorie fino alla ricezione dei documenti aziendali.
+                    </p>
+                </div>
+            </div>
+
+            <div class="space-y-2 pt-4 border-t border-slate-100">
+                <button onclick="clearChat()" class="w-full py-2 px-3 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition text-left flex items-center space-x-2">
+                    <span>🔄</span> <span>Nuova conversazione</span>
+                </button>
+                <button onclick="logout()" class="w-full py-2 px-3 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg transition text-left flex items-center space-x-2">
+                    <span>🚪</span> <span>Esci</span>
+                </button>
+            </div>
+        </aside>
+
+        <!-- Area Contenuto Chat -->
+        <main class="flex-1 flex flex-col h-full bg-slate-50 overflow-hidden">
+            <!-- Header -->
+            <header class="bg-white border-b border-slate-200 px-8 py-4">
+                <h1 class="text-xl font-bold text-slate-900">CXI Sales Intelligence Agent</h1>
+                <p class="text-xs text-slate-500">Ricerca prospect B2B · prioritizzazione · suggerimenti commerciali</p>
+            </header>
+
+            <!-- Avviso Prototipo -->
+            <div class="px-8 pt-4">
+                <div class="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-2.5 rounded-xl text-xs flex items-center space-x-2">
+                    <span>⚠️</span>
+                    <span><strong>Prototipo universitario:</strong> Verifica sempre aziende, numeri, contatti e fonti prima dell'uso commerciale.</span>
+                </div>
+            </div>
+
+            <!-- Feed Chat -->
+            <div id="chat-feed" class="flex-1 overflow-y-auto px-8 py-6 space-y-6 custom-scrollbar">
+                <div id="welcome-message" class="text-center py-12 text-slate-400">
+                    <p class="text-sm">Inizia una ricerca digitando la tua query in basso.</p>
+                    <p class="text-xs mt-1">Es. "Trova 10 aziende automotive in Piemonte con almeno 200 dipendenti..."</p>
+                </div>
+            </div>
+
+            <!-- Input Query -->
+            <div class="p-6 bg-white border-t border-slate-200">
+                <form id="query-form" onsubmit="handleQuery(event)" class="max-w-4xl mx-auto flex gap-3">
+                    <input type="text" id="user-input" placeholder="Es. Trova 10 aziende automotive in Piemonte..." required class="flex-1 px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-sm">
+                    <button type="submit" id="submit-btn" class="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-xl shadow-sm transition text-sm flex items-center space-x-2">
+                        <span>Invia</span>
+                    </button>
+                </form>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        let messages = [];
+
+        async function handleLogin(e) {
+            e.preventDefault();
+            const u = document.getElementById('username').value;
+            const p = document.getElementById('password').value;
+            const errDiv = document.getElementById('login-error');
+
+            try {
+                const res = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: u, password: p })
+                });
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    document.getElementById('login-screen').classList.add('hidden');
+                    document.getElementById('app-screen').classList.remove('hidden');
+                } else {
+                    errDiv.innerText = data.message || "Credenziali errate";
+                    errDiv.classList.remove('hidden');
+                }
+            } catch (err) {
+                errDiv.innerText = "Errore di connessione al server";
+                errDiv.classList.remove('hidden');
+            }
+        }
+
+        function logout() {
+            location.reload();
+        }
+
+        function clearChat() {
+            messages = [];
+            document.getElementById('chat-feed').innerHTML = `
+                <div id="welcome-message" class="text-center py-12 text-slate-400">
+                    <p class="text-sm">Inizia una ricerca digitando la tua query in basso.</p>
+                </div>`;
+        }
+
+        async function handleQuery(e) {
+            e.preventDefault();
+            const inputEl = document.getElementById('user-input');
+            const query = inputEl.value.trim();
+            if (!query) return;
+
+            const mode = document.querySelector('input[name="mode"]:checked').value;
+            
+            // Rimuovi messaggio di benvenuto se presente
+            const welcome = document.getElementById('welcome-message');
+            if (welcome) welcome.remove();
+
+            // Aggiungi messaggio utente
+            appendMessage("user", query);
+            inputEl.value = "";
+
+            // Mostra loader
+            const loadingId = appendLoading();
+
+            try {
+                const res = await fetch('/api/query', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query, mode })
+                });
+                const data = await res.json();
+
+                removeMessage(loadingId);
+
+                if (res.ok) {
+                    appendMessage("assistant", data.summary, data.rows, data.sources);
+                } else {
+                    appendMessage("assistant", `⚠️ Errore: ${data.error || "Impossibile elaborare la richiesta"}`);
+                }
+            } catch (err) {
+                removeMessage(loadingId);
+                appendMessage("assistant", `⚠️ Errore di rete: ${err.message}`);
+            }
+        }
+
+        function appendMessage(role, text, rows = null, sources = null) {
+            const feed = document.getElementById('chat-feed');
+            const msgId = "msg-" + Date.now();
+            const isUser = role === "user";
+
+            let html = `
+                <div id="${msgId}" class="flex ${isUser ? 'justify-end' : 'justify-start'}">
+                    <div class="max-w-3xl ${isUser ? 'bg-indigo-600 text-white rounded-2xl rounded-tr-none' : 'bg-white border border-slate-200 text-slate-800 rounded-2xl rounded-tl-none'} p-5 shadow-sm space-y-4">
+                        <div class="text-sm whitespace-pre-wrap">${text}</div>`;
+
+            if (rows && rows.length > 0) {
+                html += `
+                    <div class="overflow-x-auto custom-scrollbar border border-slate-200 rounded-xl">
+                        <table class="w-full text-left text-xs">
+                            <thead class="bg-slate-50 border-b border-slate-200 font-semibold text-slate-600">
+                                <tr>
+                                    <th class="p-3">Azienda</th>
+                                    <th class="p-3">Settore</th>
+                                    <th class="p-3">Area</th>
+                                    <th class="p-3">Priorità</th>
+                                    <th class="p-3">Score</th>
+                                    <th class="p-3">Servizio Suggerito</th>
+                                    <th class="p-3">Motivazione</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100">`;
+                
+                rows.forEach(r => {
+                    html += `
+                        <tr class="hover:bg-slate-50/50">
+                            <td class="p-3 font-medium text-slate-900">${r.Azienda || ''}</td>
+                            <td class="p-3">${r.Settore || ''}</td>
+                            <td class="p-3">${r.Area || ''}</td>
+                            <td class="p-3"><span class="px-2 py-0.5 rounded-full font-medium ${r.Priorità === 'Alta' ? 'bg-red-50 text-red-600' : 'bg-slate-100 text-slate-600'}">${r.Priorità || ''}</span></td>
+                            <td class="p-3 font-bold">${r.Punteggio || 0}</td>
+                            <td class="p-3">${r["Servizio suggerito"] || ''}</td>
+                            <td class="p-3 text-slate-500">${r.Motivazione || ''}</td>
+                        </tr>`;
+                });
+
+                html += `</tbody></table></div>`;
+                
+                // Bottone Download Excel
+                const rowsJson = JSON.stringify(rows).replace(/"/g, '&quot;');
+                html += `
+                    <button onclick="downloadExcel(${rowsJson})" class="inline-flex items-center space-x-2 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-medium text-xs rounded-lg transition border border-emerald-200">
+                        <span>📥</span> <span>Scarica Tabella Excel</span>
+                    </button>`;
+            }
+
+            if (sources && sources.length > 0) {
+                html += `
+                    <div class="mt-2 pt-2 border-t border-slate-100 text-xs text-slate-500 space-y-1">
+                        <p class="font-semibold text-slate-600">Fonti segnalate da Google Search:</p>
+                        ${sources.map(s => `<a href="${s}" target="_blank" class="block text-indigo-600 hover:underline truncate">${s}</a>`).join('')}
+                    </div>`;
+            }
+
+            html += `</div></div>`;
+            feed.insertAdjacentHTML('beforeend', html);
+            feed.scrollTop = feed.scrollHeight;
+            return msgId;
+        }
+
+        function appendLoading() {
+            const feed = document.getElementById('chat-feed');
+            const loadingId = "loader-" + Date.now();
+            const html = `
+                <div id="${loadingId}" class="flex justify-start">
+                    <div class="bg-white border border-slate-200 p-4 rounded-2xl rounded-tl-none shadow-sm flex items-center space-x-3 text-slate-500 text-sm">
+                        <svg class="animate-spin h-5 w-5 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <span>Gemini sta elaborando la richiesta...</span>
+                    </div>
+                </div>`;
+            feed.insertAdjacentHTML('beforeend', html);
+            feed.scrollTop = feed.scrollHeight;
+            return loadingId;
+        }
+
+        function removeMessage(id) {
+            const el = document.getElementById(id);
+            if (el) el.remove();
+        }
+
+        function downloadExcel(rows) {
+            const ws = XLSX.utils.json_to_sheet(rows);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Prospect");
+            XLSX.writeFile(wb, "cxi_prospect_export.xlsx");
+        }
+    </script>
+</body>
+</html>
