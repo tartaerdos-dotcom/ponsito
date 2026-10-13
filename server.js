@@ -117,7 +117,7 @@ function extractJson(text) {
     }
 }
 
-// API Test Invio Email Immediato
+// API Test Invio Email Immediato (fondamentale per la demo)
 app.post('/api/test-email', async (req, res) => {
     const { email } = req.body;
     const targetEmail = email || process.env.GMAIL_USER;
