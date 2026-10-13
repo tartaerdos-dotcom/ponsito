@@ -70,7 +70,7 @@
 
             <!-- Form Nuova Pianificazione -->
             <form onsubmit="handleCreateSchedule(event)" class="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
-                <h4 class="text-xs font-semibold text-slate-600 uppercase tracking-wider">Nuova Schedulazione</h4>
+                <h4 class="text-xs font-semibold text-slate-600 uppercase tracking-wider">Nuova Schedulazione & Test Immediato</h4>
                 <div>
                     <label class="block text-xs font-medium text-slate-600 mb-1">Prompt da eseguire in automatico</label>
                     <input type="text" id="sched-prompt" placeholder="Es. Trova 5 aziende metalmeccaniche in Veneto..." required class="w-full px-3 py-2 rounded-lg border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20">
@@ -86,7 +86,11 @@
                     </div>
                 </div>
                 <div id="sched-error" class="hidden text-xs p-2.5 rounded-lg bg-red-50 border border-red-200 text-red-700"></div>
-                <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium rounded-lg transition shadow-sm">Aggiungi Pianificazione</button>
+                <div id="sched-success" class="hidden text-xs p-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700"></div>
+                <div class="flex space-x-3 pt-1">
+                    <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium rounded-lg transition shadow-sm">Aggiungi Pianificazione</button>
+                    <button type="button" onclick="testImmediateEmail()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium rounded-lg transition shadow-sm">⚡ Testa Invio Subito</button>
+                </div>
             </form>
 
             <!-- Lista Pianificazioni Attive -->
@@ -264,7 +268,7 @@
             }
         }
 
-        // Gestione Pianificazioni
+        // Gestione Pianificazioni e Test Email
         async function openScheduleModal() {
             document.getElementById('schedule-modal').classList.remove('hidden');
             loadSchedules();
@@ -298,7 +302,9 @@
             const datetime = document.getElementById('sched-datetime').value;
             const email = document.getElementById('sched-email').value;
             const errDiv = document.getElementById('sched-error');
+            const successDiv = document.getElementById('sched-success');
             errDiv.classList.add('hidden');
+            successDiv.classList.add('hidden');
 
             try {
                 const res = await fetch('/api/schedules', {
@@ -309,12 +315,42 @@
                 const data = await res.json();
 
                 if (res.ok) {
+                    successDiv.innerText = "Pianificazione salvata con successo!";
+                    successDiv.classList.remove('hidden');
                     document.getElementById('sched-prompt').value = "";
                     document.getElementById('sched-datetime').value = "";
                     document.getElementById('sched-email').value = "";
                     loadSchedules();
                 } else {
                     errDiv.innerText = data.error || "Errore durante la pianificazione";
+                    errDiv.classList.remove('hidden');
+                }
+            } catch (err) {
+                errDiv.innerText = "Errore di connessione al server";
+                errDiv.classList.remove('hidden');
+            }
+        }
+
+        async function testImmediateEmail() {
+            const email = document.getElementById('sched-email').value;
+            const errDiv = document.getElementById('sched-error');
+            const successDiv = document.getElementById('sched-success');
+            errDiv.classList.add('hidden');
+            successDiv.classList.add('hidden');
+
+            try {
+                const res = await fetch('/api/test-email', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email })
+                });
+                const data = await res.json();
+
+                if (res.ok && data.success) {
+                    successDiv.innerText = data.message;
+                    successDiv.classList.remove('hidden');
+                } else {
+                    errDiv.innerText = data.error || "Errore durante l'invio della mail di test";
                     errDiv.classList.remove('hidden');
                 }
             } catch (err) {
