@@ -48,6 +48,7 @@
                 </h3>
                 <button onclick="closeInstructionsModal()" class="text-slate-400 hover:text-slate-600 text-xl font-bold">&times;</button>
             </div>
+            <p class="text-xs text-slate-500">Personalizza le istruzioni di sistema inviate a Gemini prima di ogni query.</p>
             <textarea id="instructions-text" rows="8" class="w-full p-3 rounded-xl border border-slate-200 text-xs font-mono text-slate-800 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 focus:outline-none custom-scrollbar"></textarea>
             <div id="instructions-status" class="hidden text-xs p-2.5 rounded-lg"></div>
             <div class="flex justify-end space-x-3 pt-2 border-t border-slate-100">
@@ -81,9 +82,10 @@
                     </div>
                     <div>
                         <label class="block text-xs font-medium text-slate-600 mb-1">Casella Email (Invio Report Excel)</label>
-                        <input type="email" id="sched-email" placeholder="tua-email@github.com" required class="w-full px-3 py-2 rounded-lg border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20">
+                        <input type="email" id="sched-email" placeholder="tua-email@gmail.com" required class="w-full px-3 py-2 rounded-lg border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20">
                     </div>
                 </div>
+                <div id="sched-error" class="hidden text-xs p-2.5 rounded-lg bg-red-50 border border-red-200 text-red-700"></div>
                 <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium rounded-lg transition shadow-sm">Aggiungi Pianificazione</button>
             </form>
 
@@ -216,147 +218,33 @@
         async function openInstructionsModal() {
             const modal = document.getElementById('instructions-modal');
             const textarea = document.getElementById('instructions-text');
-            const res = await fetch('/api/instructions');
-            const data = await res.json();
-            textarea.value = data.instructions;
+            const status = document.getElementById('instructions-status');
+            status.classList.add('hidden');
+            
+            // Apertura immediata della modale
             modal.classList.remove('hidden');
+            textarea.value = "Caricamento in corso...";
+
+            try {
+                const res = await fetch('/api/instructions');
+                if (res.ok) {
+                    const data = await res.json();
+                    textarea.value = data.instructions || "";
+                } else {
+                    textarea.value = "Impossibile caricare le istruzioni.";
+                }
+            } catch (e) {
+                textarea.value = "Errore di connessione al server.";
+            }
         }
         function closeInstructionsModal() { document.getElementById('instructions-modal').classList.add('hidden'); }
         async function saveInstructions() {
             const text = document.getElementById('instructions-text').value;
-            await fetch('/api/instructions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ instructions: text }) });
-            closeInstructionsModal();
-        }
-
-        // Gestione Pianificazioni
-        async function openScheduleModal() {
-            document.getElementById('schedule-modal').classList.remove('hidden');
-            loadSchedules();
-        }
-        function closeScheduleModal() { document.getElementById('schedule-modal').classList.add('hidden'); }
-
-        async function loadSchedules() {
-            const res = await fetch('/api/schedules');
-            const data = await res.json();
-            const listEl = document.getElementById('schedules-list');
+            const status = document.getElementById('instructions-status');
             
-            if (data.schedules.length === 0) {
-                listEl.innerHTML = `<p class="text-xs text-slate-400 py-3 text-center">Nessuna pianificazione attiva.</p>`;
-                return;
-            }
-
-            listEl.innerHTML = data.schedules.map(s => `
-                <div class="flex items-center justify-between bg-white p-3 rounded-lg border border-slate-200 text-xs">
-                    <div>
-                        <p class="font-bold text-slate-800">${s.prompt}</p>
-                        <p class="text-slate-500">📅 ${new Date(s.datetime).toLocaleString()} · ✉️ ${s.email}</p>
-                    </div>
-                    <button onclick="deleteSchedule('${s.id}')" class="px-2.5 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 font-medium rounded-md transition">Elimina</button>
-                </div>
-            `).join('');
-        }
-
-        async function handleCreateSchedule(e) {
-            e.preventDefault();
-            const prompt = document.getElementById('sched-prompt').value;
-            const datetime = document.getElementById('sched-datetime').value;
-            const email = document.getElementById('sched-email').value;
-
-            const res = await fetch('/api/schedules', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt, datetime, email })
-            });
-
-            if (res.ok) {
-                document.getElementById('sched-prompt').value = "";
-                document.getElementById('sched-datetime').value = "";
-                document.getElementById('sched-email').value = "";
-                loadSchedules();
-            }
-        }
-
-        async function deleteSchedule(id) {
-            await fetch(`/api/schedules/${id}`, { method: 'DELETE' });
-            loadSchedules();
-        }
-
-        async function handleQuery(e) {
-            e.preventDefault();
-            const inputEl = document.getElementById('user-input');
-            const query = inputEl.value.trim();
-            if (!query) return;
-
-            const mode = document.querySelector('input[name="mode"]:checked').value;
-            const welcome = document.getElementById('welcome-message');
-            if (welcome) welcome.remove();
-
-            appendMessage("user", query);
-            inputEl.value = "";
-            const loadingId = appendLoading();
-
             try {
-                const res = await fetch('/api/query', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ query, mode })
+                const res = await fetch('/api/instructions', { 
+                    method: 'POST', 
+                    headers: { 'Content-Type': 'application/json' }, 
+                    body: JSON.stringify({ instructions: text }) 
                 });
-                const data = await res.json();
-                removeMessage(loadingId);
-                if (res.ok) {
-                    appendMessage("assistant", data.summary, data.rows, data.sources);
-                } else {
-                    appendMessage("assistant", `⚠️ Errore: ${data.error}`);
-                }
-            } catch (err) {
-                removeMessage(loadingId);
-                appendMessage("assistant", `⚠️ Errore di rete: ${err.message}`);
-            }
-        }
-
-        function appendMessage(role, text, rows = null, sources = null) {
-            const feed = document.getElementById('chat-feed');
-            const msgId = "msg-" + Date.now();
-            const isUser = role === "user";
-
-            let html = `<div id="${msgId}" class="flex ${isUser ? 'justify-end' : 'justify-start'}">
-                <div class="max-w-3xl ${isUser ? 'bg-indigo-600 text-white rounded-2xl rounded-tr-none' : 'bg-white border border-slate-200 text-slate-800 rounded-2xl rounded-tl-none'} p-5 shadow-sm space-y-4">
-                    <div class="text-sm whitespace-pre-wrap">${text}</div>`;
-
-            if (rows && rows.length > 0) {
-                html += `<div class="overflow-x-auto custom-scrollbar border border-slate-200 rounded-xl">
-                    <table class="w-full text-left text-xs">
-                        <thead class="bg-slate-50 border-b border-slate-200 font-semibold text-slate-600">
-                            <tr><th class="p-3">Azienda</th><th class="p-3">Settore</th><th class="p-3">Area</th><th class="p-3">Priorità</th><th class="p-3">Score</th><th class="p-3">Servizio</th></tr>
-                        </thead>
-                        <tbody class="divide-y divide-slate-100">`;
-                rows.forEach(r => {
-                    html += `<tr class="hover:bg-slate-50/50"><td class="p-3 font-medium text-slate-900">${r.Azienda}</td><td class="p-3">${r.Settore}</td><td class="p-3">${r.Area}</td><td class="p-3">${r.Priorità}</td><td class="p-3 font-bold">${r.Punteggio}</td><td class="p-3">${r["Servizio suggerito"]}</td></tr>`;
-                });
-                html += `</tbody></table></div>`;
-                const rowsJson = JSON.stringify(rows).replace(/"/g, '&quot;');
-                html += `<button onclick="downloadExcel(${rowsJson})" class="inline-flex items-center space-x-2 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-medium text-xs rounded-lg transition border border-emerald-200"><span>📥</span> <span>Scarica Tabella Excel</span></button>`;
-            }
-            html += `</div></div>`;
-            feed.insertAdjacentHTML('beforeend', html);
-            feed.scrollTop = feed.scrollHeight;
-            return msgId;
-        }
-
-        function appendLoading() {
-            const feed = document.getElementById('chat-feed');
-            const loadingId = "loader-" + Date.now();
-            feed.insertAdjacentHTML('beforeend', `<div id="${loadingId}" class="flex justify-start"><div class="bg-white border border-slate-200 p-4 rounded-2xl rounded-tl-none shadow-sm text-sm text-slate-500">Gemini sta elaborando la richiesta...</div></div>`);
-            feed.scrollTop = feed.scrollHeight;
-            return loadingId;
-        }
-        function removeMessage(id) { const el = document.getElementById(id); if (el) el.remove(); }
-        function downloadExcel(rows) {
-            const ws = XLSX.utils.json_to_sheet(rows);
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "Prospect");
-            XLSX.writeFile(wb, "cxi_prospect_export.xlsx");
-        }
-    </script>
-</body>
-</html>
