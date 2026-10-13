@@ -21,7 +21,7 @@ let customInstructions = `Sei un assistente di pre-vendita B2B per un progetto u
 Cerca di identificare aziende reali che soddisfino i criteri; non inventare nomi, dati, URL, persone o numeri. Se un dato non è confermato scrivi "Non verificato". Non attribuire contatti nominativi senza fonti. Se non hai accesso a fonti attendibili restituisci una lista vuota e spiega il limite.
 Per ogni azienda assegna un punteggio indicativo 0-100, priorità Alta/Media/Bassa, una motivazione, un ruolo di interlocutore (non nominativo), e URL della fonte solo se realmente disponibile. Il punteggio è una valutazione ipotetica, non un fatto.`;
 
-// Lista delle pianificazioni attive
+// Lista pianificazioni attive
 let scheduledTasks = [];
 
 // Configurazione Nodemailer (Gmail)
@@ -30,6 +30,58 @@ const transporter = nodemailer.createTransport({
     auth: {
         user: process.env.GMAIL_USER || "",
         pass: process.env.GMAIL_PASS || ""
+    }
+});
+
+// Cron job globale che controlla ogni minuto se ci sono task da eseguire (evita problemi di timezone)
+cron.schedule('* * * * *', async () => {
+    const now = Date.now();
+    for (let i = scheduledTasks.length - 1; i >= 0; i--) {
+        const task = scheduledTasks[i];
+        if (now >= task.targetTime) {
+            console.log(`[CRON] Esecuzione task ${task.id} per: "${task.prompt}"`);
+            
+            // Rimuoviamo il task dalla lista per evitare esecuzioni multiple
+            scheduledTasks.splice(i, 1);
+
+            try {
+                const aiPrompt = `${customInstructions}\n\nRichiesta utente: ${task.prompt}\nRispondi ESCLUSIVAMENTE in JSON con oggetto: {"sintesi":"...", "aziende":[{"Azienda":"...", "Settore":"...", "Area":"...", "Dimensione":"...", "Priorità":"...", "Punteggio":0, "Servizio suggerito":"... (ipotesi)", "Interlocutore (ruolo)":"...", "Motivazione":"...", "Fonte URL":"...", "Stato verifica":"Da verificare"}]}.`;
+
+                if (API_KEY) {
+                    const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${API_KEY}`;
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ contents: [{ parts: [{ text: aiPrompt }] }], generationConfig: { temperature: 0.2 } })
+                    });
+
+                    const data = await response.json();
+                    const rawText = data.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("\n") || "";
+                    const parsed = extractJson(rawText);
+                    const rows = parsed.aziende || [];
+
+                    // Generazione buffer Excel
+                    const ws = XLSX.utils.json_to_sheet(rows);
+                    const wb = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(wb, ws, "Prospect");
+                    const excelBuffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+                    // Invio Email
+                    if (process.env.GMAIL_USER && process.env.GMAIL_PASS) {
+                        await transporter.sendMail({
+                            from: process.env.GMAIL_USER,
+                            to: task.email || process.env.GMAIL_USER,
+                            subject: `CXI Sales Intelligence Report - ${task.prompt}`,
+                            text: `Ecco il report automatico richiesto.\n\nSintesi:\n${parsed.sintesi}\n\nGenerato automaticamente dal prototipo universitario CXI.`,
+                            attachments: [{ filename: 'cxi_report_automatico.xlsx', content: excelBuffer }]
+                        });
+                        console.log(`[CRON] Email inviata con successo a ${task.email}`);
+                    }
+                }
+            } catch (err) {
+                console.error(`[CRON] Errore esecuzione task ${task.id}:`, err.message);
+            }
+        }
     }
 });
 
@@ -53,7 +105,7 @@ app.post('/api/instructions', (req, res) => {
     res.json({ success: true, instructions: customInstructions });
 });
 
-// Helper per estrarre JSON
+// Helper JSON
 function extractJson(text) {
     let clean = text.trim().replace(/^```(?:json)?\s*|\s*```$/gi, "");
     try {
@@ -65,9 +117,41 @@ function extractJson(text) {
     }
 }
 
+// API Test Invio Email Immediato
+app.post('/api/test-email', async (req, res) => {
+    const { email } = req.body;
+    const targetEmail = email || process.env.GMAIL_USER;
+    
+    if (!process.env.GMAIL_USER || !process.env.GMAIL_PASS) {
+        return res.status(400).json({ success: false, error: "Credenziali GMAIL_USER o GMAIL_PASS non configurate su Render." });
+    }
+
+    try {
+        const sampleRows = [
+            { "Azienda": "Test Azienda Srl", "Settore": "Tech", "Area": "Milano", "Priorità": "Alta", "Punteggio": 90, "Servizio suggerito": "Analisi processi (ipotesi)", "Stato verifica": "Verificato" }
+        ];
+        const ws = XLSX.utils.json_to_sheet(sampleRows);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Test Prospect");
+        const excelBuffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+        await transporter.sendMail({
+            from: process.env.GMAIL_USER,
+            to: targetEmail,
+            subject: `CXI Sales Intelligence - Test Invio Immediato`,
+            text: `Test di invio riuscito con successo!\n\nQuesto è un report Excel dimostrativo generato dal sistema CXI.`,
+            attachments: [{ filename: 'cxi_test_report.xlsx', content: excelBuffer }]
+        });
+
+        res.json({ success: true, message: `Email di test inviata con successo a ${targetEmail}!` });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
 // API Gestione Pianificazioni
 app.get('/api/schedules', (req, res) => {
-    res.json({ schedules: scheduledTasks.map(({ jobRef, ...rest }) => rest) });
+    res.json({ schedules: scheduledTasks.map(({ targetTime, ...rest }) => rest) });
 });
 
 app.post('/api/schedules', (req, res) => {
@@ -78,79 +162,31 @@ app.post('/api/schedules', (req, res) => {
 
     const taskId = "task-" + Date.now();
     const dateObj = new Date(datetime);
+    const targetTime = dateObj.getTime();
 
-    if (isNaN(dateObj.getTime())) {
+    if (isNaN(targetTime)) {
         return res.status(400).json({ error: "Data e ora non valide" });
     }
-
-    const minute = dateObj.getMinutes();
-    const hour = dateObj.getHours();
-    const day = dateObj.getDate();
-    const month = dateObj.getMonth() + 1;
-    const cronExpression = `${minute} ${hour} ${day} ${month} *`;
-
-    // Creazione del task cron
-    const job = cron.schedule(cronExpression, async () => {
-        console.log(`[CRON] Esecuzione task ${taskId} per: "${prompt}"`);
-        try {
-            const aiPrompt = `${customInstructions}\n\nRichiesta utente: ${prompt}\nRispondi ESCLUSIVAMENTE in JSON con oggetto: {"sintesi":"...", "aziende":[{"Azienda":"...", "Settore":"...", "Area":"...", "Dimensione":"...", "Priorità":"...", "Punteggio":0, "Servizio suggerito":"... (ipotesi)", "Interlocutore (ruolo)":"...", "Motivazione":"...", "Fonte URL":"...", "Stato verifica":"Da verificare"}]}.`;
-
-            if (API_KEY) {
-                const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${API_KEY}`;
-                const response = await fetch(url, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ contents: [{ parts: [{ text: aiPrompt }] }], generationConfig: { temperature: 0.2 } })
-                });
-
-                const data = await response.json();
-                const rawText = data.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("\n") || "";
-                const parsed = extractJson(rawText);
-                const rows = parsed.aziende || [];
-
-                // Generazione buffer Excel
-                const ws = XLSX.utils.json_to_sheet(rows);
-                const wb = XLSX.utils.book_new();
-                XLSX.utils.book_append_sheet(wb, ws, "Prospect");
-                const excelBuffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-
-                // Invio Email se le credenziali sono presenti
-                if (process.env.GMAIL_USER && process.env.GMAIL_PASS) {
-                    await transporter.sendMail({
-                        from: process.env.GMAIL_USER,
-                        to: email || process.env.GMAIL_USER,
-                        subject: `CXI Sales Intelligence Report - ${prompt}`,
-                        text: `Ecco il report automatico richiesto.\n\nSintesi:\n${parsed.sintesi}\n\nGenerato automaticamente dal prototipo universitario CXI.`,
-                        attachments: [{ filename: 'cxi_report_automatico.xlsx', content: excelBuffer }]
-                    });
-                    console.log(`[CRON] Email inviata a ${email}`);
-                }
-            }
-        } catch (err) {
-            console.error(`[CRON] Errore task ${taskId}:`, err.message);
-        }
-    });
 
     const newTask = {
         id: taskId,
         prompt,
         datetime,
         email: email || "utente@cxi.it",
-        jobRef: job
+        targetTime
     };
 
     scheduledTasks.push(newTask);
-    res.json({ success: true, message: "Pianificazione creata", schedules: scheduledTasks.map(({ jobRef, ...rest }) => rest) });
+    res.json({ success: true, message: "Pianificazione creata", schedules: scheduledTasks.map(({ targetTime, ...rest }) => rest) });
 });
 
 app.delete('/api/schedules/:id', (req, res) => {
     const { id } = req.params;
     const taskIndex = scheduledTasks.findIndex(t => t.id === id);
     if (taskIndex !== -1) {
-        if (scheduledTasks[taskIndex].jobRef) scheduledTasks[taskIndex].jobRef.stop();
         scheduledTasks.splice(taskIndex, 1);
     }
-    res.json({ success: true, schedules: scheduledTasks.map(({ jobRef, ...rest }) => rest) });
+    res.json({ success: true, schedules: scheduledTasks.map(({ targetTime, ...rest }) => rest) });
 });
 
 // API Query normale
