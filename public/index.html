@@ -7,7 +7,7 @@
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- SheetJS per esportazione Excel -->
-    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
     <style>
         .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; }
@@ -75,10 +75,18 @@
                     <label class="block text-xs font-medium text-slate-600 mb-1">Prompt da eseguire in automatico</label>
                     <input type="text" id="sched-prompt" placeholder="Es. Trova 5 aziende metalmeccaniche in Veneto..." required class="w-full px-3 py-2 rounded-lg border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20">
                 </div>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
                     <div>
-                        <label class="block text-xs font-medium text-slate-600 mb-1">Data e Ora di esecuzione</label>
+                        <label class="block text-xs font-medium text-slate-600 mb-1">Data e Ora di esecuzione (ora locale)</label>
                         <input type="datetime-local" id="sched-datetime" required class="w-full px-3 py-2 rounded-lg border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-600 mb-1">Ripetizione</label>
+                        <select id="sched-repeat" class="w-full px-3 py-2 rounded-lg border border-slate-200 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20">
+                            <option value="none">Una sola volta</option>
+                            <option value="daily">Ogni giorno</option>
+                            <option value="weekly">Ogni settimana</option>
+                        </select>
                     </div>
                     <div>
                         <label class="block text-xs font-medium text-slate-600 mb-1">Casella Email (Invio Report Excel)</label>
@@ -95,7 +103,8 @@
 
             <!-- Lista Pianificazioni Attive -->
             <div>
-                <h4 class="text-xs font-semibold text-slate-600 uppercase tracking-wider mb-2">Pianificazioni Attive nel Sistema</h4>
+                <h4 class="text-xs font-semibold text-slate-600 uppercase tracking-wider mb-2">Pianificazioni nel sistema</h4>
+                <div id="email-status" class="hidden text-xs p-2.5 mb-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-800"></div>
                 <div id="schedules-list" class="space-y-2">
                     <!-- Popolato via JS -->
                 </div>
@@ -185,24 +194,81 @@
     </div>
 
     <script>
-        let messages = [];
+        // ---------- Sessione e chiamate API ----------
+        let authToken = null;
+        try { authToken = sessionStorage.getItem('cxi_token'); } catch (e) { authToken = null; }
+        const resultsStore = {};
+        let msgCounter = 0;
 
+        function setToken(token) {
+            authToken = token;
+            try {
+                if (token) sessionStorage.setItem('cxi_token', token);
+                else sessionStorage.removeItem('cxi_token');
+            } catch (e) { /* storage non disponibile: la sessione resta in memoria */ }
+        }
+
+        function showLogin(message) {
+            setToken(null);
+            document.getElementById('app-screen').classList.add('hidden');
+            document.getElementById('login-screen').classList.remove('hidden');
+            if (message) {
+                const errDiv = document.getElementById('login-error');
+                errDiv.innerText = message;
+                errDiv.classList.remove('hidden');
+            }
+        }
+
+        function showApp() {
+            document.getElementById('login-screen').classList.add('hidden');
+            document.getElementById('app-screen').classList.remove('hidden');
+        }
+
+        async function api(url, options = {}) {
+            const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
+            if (authToken) headers['Authorization'] = 'Bearer ' + authToken;
+            const res = await fetch(url, { ...options, headers });
+            let data = {};
+            try { data = await res.json(); } catch (e) { data = {}; }
+            if (res.status === 401 && url !== '/api/login') {
+                showLogin(data.error || 'Sessione scaduta: accedere di nuovo.');
+                throw new Error(data.error || 'Sessione scaduta');
+            }
+            return { res, data };
+        }
+
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        }
+
+        // Escape completo, poi solo **grassetto** come formattazione consentita
+        function renderText(text) {
+            return escapeHtml(text).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        }
+
+        function safeUrl(url) {
+            return /^https?:\/\//i.test(String(url || '')) ? String(url) : '';
+        }
+
+        if (authToken) showApp();
+
+        // ---------- Login ----------
         async function handleLogin(e) {
             e.preventDefault();
             const u = document.getElementById('username').value;
             const p = document.getElementById('password').value;
             const errDiv = document.getElementById('login-error');
+            errDiv.classList.add('hidden');
 
             try {
-                const res = await fetch('/api/login', {
+                const { res, data } = await api('/api/login', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ username: u, password: p })
                 });
-                const data = await res.json();
-                if (res.ok && data.success) {
-                    document.getElementById('login-screen').classList.add('hidden');
-                    document.getElementById('app-screen').classList.remove('hidden');
+                if (res.ok && data.success && data.token) {
+                    setToken(data.token);
+                    document.getElementById('password').value = '';
+                    showApp();
                 } else {
                     errDiv.innerText = data.message || "Credenziali errate";
                     errDiv.classList.remove('hidden');
@@ -213,160 +279,213 @@
             }
         }
 
-        function logout() { location.reload(); }
+        function logout() { setToken(null); location.reload(); }
         function clearChat() {
             document.getElementById('chat-feed').innerHTML = `<div id="welcome-message" class="text-center py-12 text-slate-400"><p class="text-sm">Inizia una ricerca digitando la tua query in basso.</p></div>`;
         }
 
-        // Custom Instructions
+        // ---------- Custom Instructions ----------
         async function openInstructionsModal() {
             const modal = document.getElementById('instructions-modal');
             const textarea = document.getElementById('instructions-text');
-            const status = document.getElementById('instructions-status');
-            status.classList.add('hidden');
-            
+            document.getElementById('instructions-status').classList.add('hidden');
             modal.classList.remove('hidden');
             textarea.value = "Caricamento in corso...";
 
             try {
-                const res = await fetch('/api/instructions');
-                if (res.ok) {
-                    const data = await res.json();
-                    textarea.value = data.instructions || "";
-                } else {
-                    textarea.value = "Impossibile caricare le istruzioni.";
-                }
+                const { res, data } = await api('/api/instructions');
+                textarea.value = res.ok ? (data.instructions || "") : "Impossibile caricare le istruzioni.";
             } catch (e) {
                 textarea.value = "Errore di connessione al server.";
             }
         }
         function closeInstructionsModal() { document.getElementById('instructions-modal').classList.add('hidden'); }
+
+        function setStatus(el, ok, text) {
+            el.className = ok
+                ? "text-xs p-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700"
+                : "text-xs p-2.5 rounded-lg bg-red-50 border border-red-200 text-red-700";
+            el.innerText = text;
+            el.classList.remove('hidden');
+        }
+
         async function saveInstructions() {
             const text = document.getElementById('instructions-text').value;
             const status = document.getElementById('instructions-status');
-            
             try {
-                const res = await fetch('/api/instructions', { 
-                    method: 'POST', 
-                    headers: { 'Content-Type': 'application/json' }, 
-                    body: JSON.stringify({ instructions: text }) 
-                });
+                const { res, data } = await api('/api/instructions', { method: 'POST', body: JSON.stringify({ instructions: text }) });
                 if (res.ok) {
-                    status.className = "text-xs p-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700";
-                    status.innerText = "Istruzioni salvate con successo!";
-                    status.classList.remove('hidden');
+                    setStatus(status, true, "Istruzioni salvate.");
                     setTimeout(() => closeInstructionsModal(), 1200);
                 } else {
-                    status.className = "text-xs p-2.5 rounded-lg bg-red-50 border border-red-200 text-red-700";
-                    status.innerText = "Errore durante il salvataggio.";
-                    status.classList.remove('hidden');
+                    setStatus(status, false, data.error || "Errore durante il salvataggio.");
                 }
             } catch (e) {
-                status.className = "text-xs p-2.5 rounded-lg bg-red-50 border border-red-200 text-red-700";
-                status.innerText = "Errore di connessione.";
-                status.classList.remove('hidden');
+                setStatus(status, false, "Errore di connessione.");
             }
         }
 
-        // Gestione Pianificazioni e Test Email
+        // ---------- Pianificazioni e test email ----------
         async function openScheduleModal() {
             document.getElementById('schedule-modal').classList.remove('hidden');
+            const dt = document.getElementById('sched-datetime');
+            const now = new Date(Date.now() - new Date().getTimezoneOffset() * 60000);
+            dt.min = now.toISOString().slice(0, 16);
             loadSchedules();
+            loadEmailStatus();
         }
         function closeScheduleModal() { document.getElementById('schedule-modal').classList.add('hidden'); }
 
-        async function loadSchedules() {
-            const res = await fetch('/api/schedules');
-            const data = await res.json();
+        async function loadEmailStatus() {
+            const box = document.getElementById('email-status');
+            try {
+                const { res, data } = await api('/api/status');
+                const problems = [];
+                if (res.ok && !data.gemini) problems.push('GEMINI_API_KEY non configurata: i report pianificati non potranno essere generati.');
+                if (res.ok && data.emailError) problems.push(`Invio email (${data.emailProvider}) non configurato: ${data.emailError}`);
+                if (problems.length) {
+                    box.innerText = problems.join(' ');
+                    box.classList.remove('hidden');
+                } else {
+                    box.classList.add('hidden');
+                }
+            } catch (e) { box.classList.add('hidden'); }
+        }
+
+        const STATUS_LABELS = {
+            pending: ['In attesa', 'bg-indigo-50 text-indigo-700'],
+            running: ['In esecuzione', 'bg-amber-50 text-amber-700'],
+            sent: ['Inviato', 'bg-emerald-50 text-emerald-700'],
+            error: ['Errore', 'bg-red-50 text-red-700']
+        };
+        const REPEAT_LABELS = { none: 'una volta', daily: 'ogni giorno', weekly: 'ogni settimana' };
+
+        function renderSchedules(schedules) {
             const listEl = document.getElementById('schedules-list');
-            
-            if (!data.schedules || data.schedules.length === 0) {
-                listEl.innerHTML = `<p class="text-xs text-slate-400 py-3 text-center">Nessuna pianificazione attiva.</p>`;
+            if (!schedules || schedules.length === 0) {
+                listEl.innerHTML = `<p class="text-xs text-slate-400 py-3 text-center">Nessuna pianificazione presente.</p>`;
                 return;
             }
-
-            listEl.innerHTML = data.schedules.map(s => `
-                <div class="flex items-center justify-between bg-white p-3 rounded-lg border border-slate-200 text-xs">
-                    <div>
-                        <p class="font-bold text-slate-800">${s.prompt}</p>
-                        <p class="text-slate-500">📅 ${new Date(s.datetime).toLocaleString()} · ✉️ ${s.email}</p>
+            listEl.innerHTML = schedules.map(s => {
+                const [label, cls] = STATUS_LABELS[s.status] || [s.status, 'bg-slate-100 text-slate-600'];
+                const id = escapeHtml(s.id);
+                return `
+                <div class="bg-white p-3 rounded-lg border border-slate-200 text-xs space-y-2">
+                    <div class="flex items-start justify-between gap-3">
+                        <div class="min-w-0">
+                            <p class="font-bold text-slate-800 break-words">${escapeHtml(s.prompt)}</p>
+                            <p class="text-slate-500">📅 ${escapeHtml(new Date(s.runAt).toLocaleString('it-IT'))} (${escapeHtml(REPEAT_LABELS[s.repeat] || s.repeat)}) · ✉️ ${escapeHtml(s.email)}</p>
+                        </div>
+                        <span class="shrink-0 px-2 py-1 rounded-md font-medium ${cls}">${escapeHtml(label)}</span>
                     </div>
-                    <button onclick="deleteSchedule('${s.id}')" class="px-2.5 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 font-medium rounded-md transition">Elimina</button>
-                </div>
-            `).join('');
+                    ${s.lastResult ? `<p class="text-emerald-700">Ultimo esito: ${escapeHtml(s.lastResult)} · ${escapeHtml(new Date(s.lastRunAt).toLocaleString('it-IT'))}</p>` : ''}
+                    ${s.lastError ? `<p class="text-red-700 break-words">Ultimo errore: ${escapeHtml(s.lastError)}</p>` : ''}
+                    <div class="flex gap-2">
+                        <button onclick="runScheduleNow('${id}', this)" class="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-medium rounded-md transition">Esegui ora</button>
+                        <button onclick="deleteSchedule('${id}')" class="px-2.5 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 font-medium rounded-md transition">Elimina</button>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        async function loadSchedules() {
+            const listEl = document.getElementById('schedules-list');
+            try {
+                const { res, data } = await api('/api/schedules');
+                if (res.ok) renderSchedules(data.schedules);
+                else listEl.innerHTML = `<p class="text-xs text-red-600 py-3 text-center">${escapeHtml(data.error || 'Impossibile caricare le pianificazioni.')}</p>`;
+            } catch (e) {
+                listEl.innerHTML = `<p class="text-xs text-red-600 py-3 text-center">Errore di connessione al server.</p>`;
+            }
+        }
+
+        function schedMessages() {
+            const errDiv = document.getElementById('sched-error');
+            const successDiv = document.getElementById('sched-success');
+            errDiv.classList.add('hidden');
+            successDiv.classList.add('hidden');
+            return {
+                ok: t => { successDiv.innerText = t; successDiv.classList.remove('hidden'); },
+                fail: t => { errDiv.innerText = t; errDiv.classList.remove('hidden'); }
+            };
         }
 
         async function handleCreateSchedule(e) {
             e.preventDefault();
-            const prompt = document.getElementById('sched-prompt').value;
-            const datetime = document.getElementById('sched-datetime').value;
-            const email = document.getElementById('sched-email').value;
-            const errDiv = document.getElementById('sched-error');
-            const successDiv = document.getElementById('sched-success');
-            errDiv.classList.add('hidden');
-            successDiv.classList.add('hidden');
+            const msg = schedMessages();
+            const prompt = document.getElementById('sched-prompt').value.trim();
+            const localValue = document.getElementById('sched-datetime').value;
+            const email = document.getElementById('sched-email').value.trim();
+            const repeat = document.getElementById('sched-repeat').value;
+
+            // Il valore di datetime-local non ha fuso orario: lo si converte qui in ISO UTC
+            // così il server (che su Render gira in UTC) esegue il task all'ora italiana corretta.
+            const runAtDate = new Date(localValue);
+            if (isNaN(runAtDate.getTime())) return msg.fail("Data e ora non valide.");
 
             try {
-                const res = await fetch('/api/schedules', {
+                const { res, data } = await api('/api/schedules', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ prompt, datetime, email })
+                    body: JSON.stringify({ prompt, runAt: runAtDate.toISOString(), email, repeat })
                 });
-                const data = await res.json();
-
                 if (res.ok) {
-                    successDiv.innerText = "Pianificazione salvata con successo!";
-                    successDiv.classList.remove('hidden');
+                    msg.ok(data.message || "Pianificazione salvata.");
                     document.getElementById('sched-prompt').value = "";
                     document.getElementById('sched-datetime').value = "";
-                    document.getElementById('sched-email').value = "";
-                    loadSchedules();
+                    renderSchedules(data.schedules);
                 } else {
-                    errDiv.innerText = data.error || "Errore durante la pianificazione";
-                    errDiv.classList.remove('hidden');
+                    msg.fail(data.error || "Errore durante la pianificazione");
                 }
             } catch (err) {
-                errDiv.innerText = "Errore di connessione al server";
-                errDiv.classList.remove('hidden');
+                msg.fail("Errore di connessione al server");
             }
         }
 
         async function testImmediateEmail() {
-            const email = document.getElementById('sched-email').value;
-            const errDiv = document.getElementById('sched-error');
-            const successDiv = document.getElementById('sched-success');
-            errDiv.classList.add('hidden');
-            successDiv.classList.add('hidden');
+            const msg = schedMessages();
+            const email = document.getElementById('sched-email').value.trim();
+            if (!email) return msg.fail("Indicare prima l'indirizzo email di destinazione.");
+            msg.ok("Invio in corso...");
 
             try {
-                const res = await fetch('/api/test-email', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email })
-                });
-                const data = await res.json();
-
-                if (res.ok && data.success) {
-                    successDiv.innerText = data.message;
-                    successDiv.classList.remove('hidden');
-                } else {
-                    errDiv.innerText = data.error || "Errore durante l'invio della mail di test";
-                    errDiv.classList.remove('hidden');
-                }
+                const { res, data } = await api('/api/test-email', { method: 'POST', body: JSON.stringify({ email }) });
+                schedMessages();
+                if (res.ok && data.success) msg.ok(data.message);
+                else msg.fail(data.error || "Errore durante l'invio della mail di test");
             } catch (err) {
-                errDiv.innerText = "Errore di connessione al server";
-                errDiv.classList.remove('hidden');
+                schedMessages();
+                msg.fail("Errore di connessione al server");
+            }
+        }
+
+        async function runScheduleNow(id, btn) {
+            const msg = schedMessages();
+            btn.disabled = true;
+            btn.innerText = "Generazione in corso...";
+            try {
+                const { res, data } = await api(`/api/schedules/${encodeURIComponent(id)}/run`, { method: 'POST' });
+                if (res.ok) msg.ok(data.message);
+                else msg.fail(data.error || "Esecuzione non riuscita");
+                if (data.schedules) renderSchedules(data.schedules);
+                else loadSchedules();
+            } catch (err) {
+                msg.fail("Errore di connessione al server");
+                loadSchedules();
             }
         }
 
         async function deleteSchedule(id) {
-            await fetch(`/api/schedules/${id}`, { method: 'DELETE' });
-            loadSchedules();
+            try {
+                const { data } = await api(`/api/schedules/${encodeURIComponent(id)}`, { method: 'DELETE' });
+                renderSchedules(data.schedules);
+            } catch (e) { loadSchedules(); }
         }
 
+        // ---------- Chat ----------
         async function handleQuery(e) {
             e.preventDefault();
             const inputEl = document.getElementById('user-input');
+            const btn = document.getElementById('submit-btn');
             const query = inputEl.value.trim();
             if (!query) return;
 
@@ -376,50 +495,62 @@
 
             appendMessage("user", query);
             inputEl.value = "";
+            btn.disabled = true;
             const loadingId = appendLoading();
 
             try {
-                const res = await fetch('/api/query', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ query, mode })
-                });
-                const data = await res.json();
+                const { res, data } = await api('/api/query', { method: 'POST', body: JSON.stringify({ query, mode }) });
                 removeMessage(loadingId);
-                if (res.ok) {
-                    appendMessage("assistant", data.summary, data.rows, data.sources);
-                } else {
-                    appendMessage("assistant", `⚠️ Errore: ${data.error}`);
-                }
+                if (res.ok) appendMessage("assistant", data.summary, data.rows, data.sources);
+                else appendMessage("assistant", `⚠️ Errore: ${data.error || 'risposta non valida dal server'}`);
             } catch (err) {
                 removeMessage(loadingId);
                 appendMessage("assistant", `⚠️ Errore di rete: ${err.message}`);
+            } finally {
+                btn.disabled = false;
             }
         }
 
         function appendMessage(role, text, rows = null, sources = null) {
             const feed = document.getElementById('chat-feed');
-            const msgId = "msg-" + Date.now();
+            const msgId = "msg-" + (++msgCounter);
             const isUser = role === "user";
 
             let html = `<div id="${msgId}" class="flex ${isUser ? 'justify-end' : 'justify-start'}">
                 <div class="max-w-3xl ${isUser ? 'bg-indigo-600 text-white rounded-2xl rounded-tr-none' : 'bg-white border border-slate-200 text-slate-800 rounded-2xl rounded-tl-none'} p-5 shadow-sm space-y-4">
-                    <div class="text-sm whitespace-pre-wrap">${text}</div>`;
+                    <div class="text-sm whitespace-pre-wrap">${renderText(text)}</div>`;
 
             if (rows && rows.length > 0) {
+                resultsStore[msgId] = rows;
                 html += `<div class="overflow-x-auto custom-scrollbar border border-slate-200 rounded-xl">
                     <table class="w-full text-left text-xs">
                         <thead class="bg-slate-50 border-b border-slate-200 font-semibold text-slate-600">
-                            <tr><th class="p-3">Azienda</th><th class="p-3">Settore</th><th class="p-3">Area</th><th class="p-3">Priorità</th><th class="p-3">Score</th><th class="p-3">Servizio</th></tr>
+                            <tr><th class="p-3">Azienda</th><th class="p-3">Settore</th><th class="p-3">Area</th><th class="p-3">Priorità</th><th class="p-3">Score</th><th class="p-3">Servizio</th><th class="p-3">Fonte</th></tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100">`;
                 rows.forEach(r => {
-                    html += `<tr class="hover:bg-slate-50/50"><td class="p-3 font-medium text-slate-900">${r.Azienda}</td><td class="p-3">${r.Settore}</td><td class="p-3">${r.Area}</td><td class="p-3">${r.Priorità}</td><td class="p-3 font-bold">${r.Punteggio}</td><td class="p-3">${r["Servizio suggerito"]}</td></tr>`;
+                    const url = safeUrl(r["Fonte URL"]);
+                    html += `<tr class="hover:bg-slate-50/50">
+                        <td class="p-3 font-medium text-slate-900">${escapeHtml(r.Azienda)}</td>
+                        <td class="p-3">${escapeHtml(r.Settore)}</td>
+                        <td class="p-3">${escapeHtml(r.Area)}</td>
+                        <td class="p-3">${escapeHtml(r["Priorità"])}</td>
+                        <td class="p-3 font-bold">${escapeHtml(r.Punteggio)}</td>
+                        <td class="p-3">${escapeHtml(r["Servizio suggerito"])}</td>
+                        <td class="p-3">${url ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="text-indigo-600 underline">link</a>` : '<span class="text-slate-400">n/d</span>'}</td>
+                    </tr>`;
                 });
                 html += `</tbody></table></div>`;
-                const rowsJson = JSON.stringify(rows).replace(/"/g, '&quot;');
-                html += `<button onclick="downloadExcel(${rowsJson})" class="inline-flex items-center space-x-2 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-medium text-xs rounded-lg transition border border-emerald-200"><span>📥</span> <span>Scarica Tabella Excel</span></button>`;
+                html += `<button onclick="downloadExcel('${msgId}')" class="inline-flex items-center space-x-2 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-medium text-xs rounded-lg transition border border-emerald-200"><span>📥</span> <span>Scarica Tabella Excel</span></button>`;
             }
+
+            const links = (sources || []).map(safeUrl).filter(Boolean);
+            if (links.length > 0) {
+                html += `<div class="text-xs text-slate-500"><p class="font-semibold mb-1">Fonti consultate dal modello</p><ul class="list-disc pl-5 space-y-0.5">${
+                    links.slice(0, 10).map((u, i) => `<li><a href="${escapeHtml(u)}" target="_blank" rel="noopener noreferrer" class="text-indigo-600 underline">Fonte ${i + 1}</a></li>`).join('')
+                }</ul></div>`;
+            }
+
             html += `</div></div>`;
             feed.insertAdjacentHTML('beforeend', html);
             feed.scrollTop = feed.scrollHeight;
@@ -428,13 +559,15 @@
 
         function appendLoading() {
             const feed = document.getElementById('chat-feed');
-            const loadingId = "loader-" + Date.now();
+            const loadingId = "loader-" + (++msgCounter);
             feed.insertAdjacentHTML('beforeend', `<div id="${loadingId}" class="flex justify-start"><div class="bg-white border border-slate-200 p-4 rounded-2xl rounded-tl-none shadow-sm text-sm text-slate-500">Gemini sta elaborando la richiesta...</div></div>`);
             feed.scrollTop = feed.scrollHeight;
             return loadingId;
         }
         function removeMessage(id) { const el = document.getElementById(id); if (el) el.remove(); }
-        function downloadExcel(rows) {
+        function downloadExcel(msgId) {
+            const rows = resultsStore[msgId];
+            if (!rows) return;
             const ws = XLSX.utils.json_to_sheet(rows);
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, "Prospect");
